@@ -33,7 +33,7 @@ class BillingServiceTest
             every { charge(invoice) } returns Random.nextBoolean()
         }
 
-        val results = BillingService(paymentProvider).bill(dal)
+        val results = BillingService(paymentProvider, dal).bill()
         assertEquals(nInvoices, results.size)
     }
 
@@ -45,7 +45,7 @@ class BillingServiceTest
             every { charge(invoice) } throws CustomerNotFoundException(0)
         }
 
-        val results = BillingService(paymentProvider).bill(dal)
+        val results =  BillingService(paymentProvider, dal).bill()
         assertEquals(nInvoices, results.size)
     }
 
@@ -57,7 +57,7 @@ class BillingServiceTest
             every { charge(invoice) } throws CurrencyMismatchException(0, 0)
         }
 
-        val results = BillingService(paymentProvider).bill(dal)
+        val results =  BillingService(paymentProvider, dal).bill()
         assertEquals(nInvoices, results.size)
     }
 
@@ -69,7 +69,7 @@ class BillingServiceTest
             every { charge(invoice) } throws NetworkException()
         }
 
-        val results = BillingService(paymentProvider).bill(dal)
+        val results =  BillingService(paymentProvider, dal).bill()
         assertEquals(nInvoices, results.size)
     }
 }
