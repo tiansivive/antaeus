@@ -2,36 +2,88 @@ package io.pleo.antaeus.core.services
 
 
 import io.pleo.antaeus.core.exceptions.CurrencyMismatchException
+import io.pleo.antaeus.core.exceptions.CustomerNotFoundException
+import io.pleo.antaeus.core.exceptions.NetworkException
 import io.pleo.antaeus.core.external.PaymentProvider
 
-import io.pleo.antaeus.data.AntaeusDal
-import io.pleo.antaeus.models.Currency
+
 import io.pleo.antaeus.models.Invoice
+import io.pleo.antaeus.models.InvoiceStatus
 import java.lang.Exception
+
+
+enum class BillingStatus {
+	SUCCESS,
+	NOT_ENOUGH_MONEY,
+	CURRENCY_MISMATCH,
+	CUSTOMER_NOT_FOUND,
+	NETWORK_ERROR,
+	UNKNOWN
+}
+
 
 class BillingService(
 		private val paymentProvider: PaymentProvider,
-		private val dal: AntaeusDal
+		private val invoiceService: InvoiceService,
+		private val customerService: CustomerService
 ) {
 
 	// TODO - Add code e.g. here
 
-	private fun attemptCharging(invoice: Invoice): Boolean{
+	fun handleCurrencyMismatch(invoice: Invoice): Invoice{
+		val customerCurrency = customerService.fetch(invoice.customerId).currency
+		return invoiceService.convertCurrency(invoice, customerCurrency)
+	}
 
-		return try {
-			this.paymentProvider.charge(invoice)
-		}catch (e: CurrencyMismatchException){
-			val customerCurrency = CustomerService(dal).fetch(invoice.customerId).currency
-			InvoiceService(dal).convertCurrency(invoice, customerCurrency)
-			attemptCharging(invoice)
+
+	private val attemptCharging = { acc: MutableMap<Invoice, BillingStatus>, invoice: Invoice ->
+		try {
+			if (paymentProvider.charge(invoice)){
+				acc[invoice] = BillingStatus.SUCCESS
+			}else {
+				acc[invoice] = BillingStatus.NOT_ENOUGH_MONEY
+			}
+		}catch (e: CurrencyMismatchException) {
+			acc[invoice] =  BillingStatus.CURRENCY_MISMATCH
+		}catch (e: CustomerNotFoundException){
+			acc[invoice] =  BillingStatus.CUSTOMER_NOT_FOUND
+		}catch (e: NetworkException){
+			acc[invoice] =  BillingStatus.NETWORK_ERROR
 		}catch (e: Exception){
-			false
+			acc[invoice] =  BillingStatus.UNKNOWN
 		}
+		acc
 	}
 
-	fun bill() : List<Boolean>{
-		return InvoiceService(dal)
+	fun bill() : MutableMap<Invoice, BillingStatus>{
+		return invoiceService
 				.fetchAll()
-				.map { attemptCharging(it) }
+				.filter { it.status == InvoiceStatus.PENDING }
+				.fold(HashMap<Invoice, BillingStatus>(), attemptCharging )
 	}
+
+
+	fun handleResults(res:  MutableMap<Invoice, BillingStatus>){
+
+		val paid = res
+				.filter { it.value == BillingStatus.SUCCESS }
+				.map { it.key }
+		val wrongCurrency = res
+				.filter { it.value == BillingStatus.CURRENCY_MISMATCH }
+				.map { it.key }
+
+		val notEnoughMoney = res
+				.filter { it.value == BillingStatus.NOT_ENOUGH_MONEY }
+				.map { it.key }
+
+		val converted = wrongCurrency.map { handleCurrencyMismatch(it) }
+
+		paid.forEach { invoiceService.markAsPaid(it) }
+
+
+
+
+
+	}
+
 }
