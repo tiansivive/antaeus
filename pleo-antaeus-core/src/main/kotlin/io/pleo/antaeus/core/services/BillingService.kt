@@ -30,7 +30,7 @@ class BillingService(
 
 	// TODO - Add code e.g. here
 
-	fun handleCurrencyMismatch(invoice: Invoice): Invoice{
+	private fun handleCurrencyMismatch(invoice: Invoice): Invoice{
 		val customerCurrency = customerService.fetch(invoice.customerId).currency
 		return invoiceService.convertCurrency(invoice, customerCurrency)
 	}
@@ -65,25 +65,22 @@ class BillingService(
 
 	fun handleResults(res:  MutableMap<Invoice, BillingStatus>){
 
-		val paid = res
-				.filter { it.value == BillingStatus.SUCCESS }
-				.map { it.key }
-		val wrongCurrency = res
+		if(res.isEmpty()) {
+			return
+		}
+
+		res.filter { it.value == BillingStatus.SUCCESS }
+			.map {  invoiceService.markAsPaid(it.key) }
+
+		res.filter { it.value == BillingStatus.NOT_ENOUGH_MONEY }
+			.map { invoiceService.addInterest(it.key) }
+
+		val wrongCurrencyResults = res
 				.filter { it.value == BillingStatus.CURRENCY_MISMATCH }
-				.map { it.key }
+				.map { handleCurrencyMismatch(it.key) }
+				.fold(HashMap<Invoice, BillingStatus>(), attemptCharging )
 
-		val notEnoughMoney = res
-				.filter { it.value == BillingStatus.NOT_ENOUGH_MONEY }
-				.map { it.key }
-
-		val converted = wrongCurrency.map { handleCurrencyMismatch(it) }
-
-		paid.forEach { invoiceService.markAsPaid(it) }
-
-
-
-
-
+		return handleResults(wrongCurrencyResults)
 	}
 
 }
