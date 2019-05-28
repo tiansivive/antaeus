@@ -29,26 +29,50 @@ class InvoiceService(private val dal: AntaeusDal) {
         return dal.update(updated)
     }
 
-    fun markAsPaid(invoice: Invoice): Invoice{
-       return  dal.update(
-            Invoice(
-                invoice.id,
-                invoice.customerId,
-                invoice.amount,
-                InvoiceStatus.PAID
-            )
-        )
-    }
 
-    // TODO: create a new PENDING invoice and mark the old one as UNPAID
-    fun addInterest(invoice: Invoice): Invoice{
+    fun markAsPaid(invoice: Invoice): Invoice{
         return  dal.update(
                 Invoice(
                         invoice.id,
                         invoice.customerId,
-                        Money(invoice.amount.value * 1.05.toBigDecimal(), invoice.amount.currency),
-                        InvoiceStatus.PENDING
+                        invoice.amount,
+                        InvoiceStatus.PAID
                 )
         )
+    }
+
+    fun markAsUnpaid(invoice: Invoice): Invoice{
+        return  dal.update(
+                Invoice(
+                        invoice.id,
+                        invoice.customerId,
+                        invoice.amount,
+                        InvoiceStatus.UNPAID
+                )
+        )
+    }
+
+    fun markError(invoice: Invoice, error: InvoiceStatus): Invoice {
+        return  dal.update(
+                Invoice(
+                        invoice.id,
+                        invoice.customerId,
+                        invoice.amount,
+                        error
+                )
+        )
+    }
+
+
+    fun newInvoiceWithInterest(invoice: Invoice): Invoice{
+
+        markAsUnpaid(invoice)
+
+        val addedInterestInvoice =  dal.createInvoice(
+            Money(invoice.amount.value * 1.05.toBigDecimal(), invoice.amount.currency),
+            dal.fetchCustomer(invoice.id)!!
+        )
+
+        return addedInterestInvoice!!
     }
 }
