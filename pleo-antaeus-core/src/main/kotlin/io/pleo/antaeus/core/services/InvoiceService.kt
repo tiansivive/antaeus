@@ -70,7 +70,7 @@ class InvoiceService(private val dal: AntaeusDal) {
 
         val addedInterestInvoice =  dal.createInvoice(
             Money(invoice.amount.value * 1.05.toBigDecimal(), invoice.amount.currency),
-            dal.fetchCustomer(invoice.id)!!
+            dal.fetchCustomer(invoice.customerId)!!
         )
 
         return addedInterestInvoice!!
