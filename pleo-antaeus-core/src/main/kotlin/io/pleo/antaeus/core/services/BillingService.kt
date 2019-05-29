@@ -93,16 +93,21 @@ class BillingService(
 
 
 	private fun handleCurrencyMismatches (invoices: Map<Invoice, BillingStatus>): Map<Invoice, BillingStatus> {
-
-		val currencyMismatches = invoices.filter { it.value == BillingStatus.CURRENCY_MISMATCH }
-
-		return if(currencyMismatches.isEmpty()) {
-			invoices
-		} else {
-			currencyMismatches
-					.map { handleCurrencyMismatch(it.key) }
-					.fold(invoices.toMutableMap(), attemptCharging )
-		}
+		return invoices
+				.mapKeys {
+					if( it.value == BillingStatus.CURRENCY_MISMATCH ){
+						handleCurrencyMismatch(it.key)
+					} else {
+						it.key
+					}
+				}
+				.mapValues {
+					if( it.value == BillingStatus.CURRENCY_MISMATCH ){
+						charge(it.key)
+					} else {
+						it.value
+					}
+				}
 
 	}
 
