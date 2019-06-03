@@ -87,7 +87,7 @@ class BillingServiceTest
     }
 
 
-    @Test
+    @Test // TODO: mock coroutine timeout
     fun `will handle billing when network is down` (){
 
         val paymentProvider = mockk< PaymentProvider > {

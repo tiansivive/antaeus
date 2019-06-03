@@ -9,11 +9,14 @@ import io.javalin.apibuilder.ApiBuilder.get
 import io.javalin.apibuilder.ApiBuilder.post
 import io.javalin.apibuilder.ApiBuilder.path
 import io.pleo.antaeus.core.exceptions.EntityNotFoundException
+import io.pleo.antaeus.core.services.BillingPeriod
 import io.pleo.antaeus.core.services.BillingService
 
 import io.pleo.antaeus.core.services.CustomerService
 import io.pleo.antaeus.core.services.InvoiceService
 import mu.KotlinLogging
+
+import kotlinx.coroutines.*
 
 private val logger = KotlinLogging.logger {}
 
@@ -79,14 +82,72 @@ class AntaeusRest (
                        }
                    }
 
-                   path("bill") {
-                       // URL: /rest/v1/bill
-                       get {
+                   path("billing") {
+                       // URL: /rest/v1/billing
+                       var job: Job? = null
 
-                           it.json( billingService.bill() )
+                       path("do") {
+                           // URL: /rest/v1/billing/do
+                           post {
+                               it.json( billingService.bill() )
+                           }
                        }
 
+                       path("start") {
+                           // URL: /rest/v1/billing/start
+                           post {
 
+                               try {
+
+                                   if (job != null) {
+                                       it.res.sendError(400, "Automatic Billing is already running")
+                                   }
+                                   else {
+
+                                       val body = it.body<Map<String, String>>()
+                                       val period = body.get(key = "Period")
+
+                                       if (period == null) {
+                                           it.res.sendError(400, "No 'Period' argument")
+                                       }
+                                       else {
+                                           when (period.toLowerCase()) {
+                                               "monthly" -> job = billingService.startAutomaticBilling(BillingPeriod.MONTHLY, 0)
+                                               "weekly" -> job = billingService.startAutomaticBilling(BillingPeriod.WEEKLY, 0)
+                                               "daily" -> job = billingService.startAutomaticBilling(BillingPeriod.DAILY, 0)
+                                               "custom" -> {
+                                                   val value = body.get(key = "Value")
+                                                   if (value == null) {
+                                                       it.res.sendError(400, "No 'Value' argument for 'Custom Period'")
+                                                   }
+                                                   else {
+                                                       val parsed = value.toLong()
+                                                       job = billingService.startAutomaticBilling(BillingPeriod.CUSTOM, parsed)
+                                                   }
+                                               }
+                                               else -> it.res.sendError(400, "Unrecognised 'Period' argument")
+                                           }
+                                           it.res.setStatus(200, "Started Automatic Billing")
+                                       }
+                                   }
+                               } catch (e: Exception){
+                                   it.res.sendError(400, e.message)
+                               }
+                           }
+                       }
+
+                       path("stop") {
+                           // URL: /rest/v1/billing/stop
+                           post {
+                               if( job != null){
+                                   job!!.cancel()
+                                   job = null
+                                   it.json( "Stopped Automatic Billing" )
+                               } else {
+                                   it.res.sendError(400, "Automatic Billing is not running")
+                               }
+                           }
+                       }
                    }
                }
            }

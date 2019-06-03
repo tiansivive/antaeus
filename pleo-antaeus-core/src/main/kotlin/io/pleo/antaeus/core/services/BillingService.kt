@@ -1,16 +1,17 @@
 package io.pleo.antaeus.core.services
 
-
 import io.pleo.antaeus.core.exceptions.CurrencyMismatchException
 import io.pleo.antaeus.core.exceptions.CustomerNotFoundException
 import io.pleo.antaeus.core.exceptions.NetworkException
 import io.pleo.antaeus.core.external.PaymentProvider
 
-
 import io.pleo.antaeus.models.Invoice
 import io.pleo.antaeus.models.InvoiceStatus
-import java.lang.Exception
+import kotlinx.coroutines.*
 
+import java.lang.Exception
+import java.util.*
+import kotlin.concurrent.schedule
 
 enum class BillingStatus {
 	SUCCESS,
@@ -21,7 +22,16 @@ enum class BillingStatus {
 	UNKNOWN
 }
 
+enum class BillingPeriod {
+	DAILY,
+	WEEKLY,
+	MONTHLY,
+	CUSTOM
+}
+
 const val MAX_RETRY_ATTEMPTS = 5
+const val ATTEMPT_DELAY_FACTOR = 1000L
+const val STOP_ATTEMPTING_TIMEOUT = 5 * 60 * 1000L
 
 class BillingService(
 		private val paymentProvider: PaymentProvider,
@@ -31,8 +41,6 @@ class BillingService(
 
 
 	// TODO - Add code e.g. here
-
-
 
 	private fun handleCurrencyMismatch(invoice: Invoice): Invoice{
 		val customerCurrency = customerService.fetch(invoice.customerId).currency
@@ -64,7 +72,7 @@ class BillingService(
 	}
 
 
-	private fun handleNetworkErrors (limit: Int, current: Int, invoices: Map<Invoice, BillingStatus> ): Map<Invoice, BillingStatus>{
+	private suspend fun handleNetworkErrors (limit: Int, current: Int, invoices: Map<Invoice, BillingStatus> ): Map<Invoice, BillingStatus>{
 
 		if(current > limit){
 			return invoices
@@ -77,6 +85,7 @@ class BillingService(
 					}
 
 		}
+		delay(current * ATTEMPT_DELAY_FACTOR)
 
 		val networkErrors = invoices
 				.filter { it.value == BillingStatus.NETWORK_ERROR }
@@ -135,14 +144,22 @@ class BillingService(
 	}
 
 
-	private fun handleResults(results:  Map<Invoice, BillingStatus>): Map<Invoice, BillingStatus>{
+	private fun handleResults(results:  Map<Invoice, BillingStatus>): Map<Invoice, BillingStatus> = runBlocking {
 
 		var processed = handleCurrencyMismatches(results)
-		processed = handleNetworkErrors(MAX_RETRY_ATTEMPTS, 1, processed)
+
+		val job = launch {
+			withTimeout(STOP_ATTEMPTING_TIMEOUT) {// Add a timeout here for safety in case we change ATTEMPT_DELAY_FACTOR at some point
+				processed = handleNetworkErrors(MAX_RETRY_ATTEMPTS, 1, processed)
+			}
+		}
+		job.join()
+
+
 		processed = handleInsufficientBalance(processed)
 		processed = handleBillingSuccess(processed)
 
-		return processed
+		processed
 	}
 
 
@@ -154,6 +171,37 @@ class BillingService(
 				.fold(HashMap<Invoice, BillingStatus>(), attemptCharging )
 
 		return handleResults(results)
+
+	}
+
+
+
+	fun startAutomaticBilling(period: BillingPeriod, value: Long?): Job {
+
+		fun getNextDelay(): Long {
+
+			val calendar = Calendar.getInstance()
+			val dayToMilliseconds = 24 * 60 * 60 * 1000L
+
+			return when(period) {
+				BillingPeriod.DAILY -> dayToMilliseconds
+				BillingPeriod.WEEKLY -> 7 * dayToMilliseconds
+				BillingPeriod.MONTHLY -> {
+					val today = calendar.get(Calendar.DAY_OF_MONTH)
+					val daysTillNextBilling = calendar.getActualMaximum(Calendar.DAY_OF_MONTH) - today
+					daysTillNextBilling * 24 * 60 * 60 * 1000L
+				}
+				BillingPeriod.CUSTOM -> value!!
+			}
+		}
+
+		suspend fun next() {
+			bill()
+			delay(getNextDelay())
+			next()
+		}
+
+		return GlobalScope.launch { next() }
 
 	}
 
