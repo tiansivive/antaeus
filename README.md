@@ -56,9 +56,9 @@ Happy hacking 😁!
 
 
 
-## My Solution
+# My Solution
 
-#Billing the invoices
+## Billing the invoices
 
 The idea for the API is to have one single method, `bill`, that attempts to charge all the *PENDING* invoices and handles all the different result scenarios.
 To simplify the process and have better testability, I tried to have each function do only one thing and avoid internal state.
@@ -70,7 +70,7 @@ For `NetworkErrors` I use coroutines to repeatedly retry the process, only with 
 
 If it's a successful billing, then I just mark the invoice as *PAID*, otherwise, I mark it as *UNPAID* and create a new *PENDING* invoice with added interest.
 
-#Starting up the service
+## Starting up the service
 
 I've added some extra REST endpoints.
 
