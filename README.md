@@ -53,3 +53,31 @@ Happy hacking 😁!
 * [kotlin-logging](https://github.com/MicroUtils/kotlin-logging) - Simple logging framework for Kotlin
 * [JUnit 5](https://junit.org/junit5/) - Testing framework
 * [Mockk](https://mockk.io/) - Mocking library
+
+
+
+## My Solution
+
+#Billing the invoices
+
+The idea for the API is to have one single method, `bill`, that attempts to charge all the *PENDING* invoices and handles all the different result scenarios.
+To simplify the process and have better testability, I tried to have each function do only one thing and avoid internal state.
+This means that first I attempt to charge all the invoices, and keep track of their result. From there, I ran all the invoices through a sequence of functions designed to process and handle the different outcomes.
+
+For `CurrencyMismatches` I introduces a mechanism to convert the currency of the invoice and then attempt charging it again. I fake the exchange rate, but ideally that would be retrieved from some external API.
+For `CustomerNotFound` errors, I couldn't quite see how that could happen and what would be an appropriate automatic response so I just marked the invoice as in an *ERROR* state.
+For `NetworkErrors` I use coroutines to repeatedly retry the process, only with a bigger delay between each request. If it reaches the limit it just marks them as in *NETWORK_ERROR* state. I have a small limit, but ideally it would be higher, and if it still fails, then maybe notify the Customer? I guess it depends a bit.
+
+If it's a successful billing, then I just mark the invoice as *PAID*, otherwise, I mark it as *UNPAID* and create a new *PENDING* invoice with added interest.
+
+#Starting up the service
+
+I've added some extra REST endpoints.
+
+GET `/rest/v1/billing/do` runs the billing once and returns the results
+
+POST `/rest/v1/billing/stop` stops the automatic billing or returns an error if the service isn't running.
+
+POST `/rest/v1/billing/start` starts the automatic billing with a specified period, which is sent in the JSON body of the request.
+The period can be one of `MONTHLY`, `WEEKLY`, `DAILY` or `CUSTOM`. In case of `CUSTOM`, a value field should also be specified, which is the period in milliseconds. This should be a string, just for simplicity purposes. It's more for testing, but still, could be useful :P
+
